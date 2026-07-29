@@ -1,0 +1,187 @@
+[
+  {
+    "question": "How many days do I have to request a full refund after purchase?",
+    "ground_truth": "You have 14 days from the date of purchase to request a full, no-questions-asked refund for a first-time subscription purchase.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "How do I upgrade my Meridian Suite subscription to a Team plan?",
+    "ground_truth": "Go to Account Settings > Plan & Billing > Change Plan and select the Team plan. The price difference for the current billing period is charged immediately on a prorated basis.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "What happens if I downgrade my plan?",
+    "ground_truth": "Downgrades take effect at the end of the current billing cycle, so you keep access to the features you already paid for. You cannot downgrade below the number of active seats on a Team or Enterprise plan without removing seats first.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "How much does the Team plan cost per seat per month?",
+    "ground_truth": "The Team plan costs $27.99 per seat per month, or $23.33 per seat per month if billed annually.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "Is there a student discount?",
+    "ground_truth": "Yes, verified students and teachers get 60% off Individual and Team plans.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "How long does standard shipping take for hardware orders?",
+    "ground_truth": "Standard shipping takes 5-7 business days and is free on orders over $50.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "Can I cancel an order after it has shipped?",
+    "ground_truth": "No, once an order is shipped it cannot be cancelled. You would need to use the standard 30-day return process with a prepaid return label instead.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "My account is locked after failed login attempts. How long until I can try again?",
+    "ground_truth": "Accounts lock for 15 minutes after 5 failed login attempts. You can also reset your password to unlock the account immediately.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "The installer is stuck at downloading components, what should I check?",
+    "ground_truth": "Check your internet connection and temporarily disable any VPN, confirm you have at least 10GB of free disk space, and if on a corporate network ask IT to allowlist the Meridian Suite CDN domains.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "Does Meridian Suite support single sign-on?",
+    "ground_truth": "Yes, Enterprise plans support SAML 2.0 and OIDC-based SSO with providers like Okta, Azure AD, and Google Workspace.",
+    "source_intent": "manual"
+  },
+  {
+    "question": "How do I cancel order #A1B2C3?",
+    "ground_truth": "While the order is still processing you can cancel it free of charge from Account Settings > Orders. Once a hardware order has shipped it can no longer be cancelled and you'd need to use the standard return process instead; subscription orders cancelled after the first billing cycle may incur the $10 early-termination fee.",
+    "source_intent": "cancel_order"
+  },
+  {
+    "question": "Can I still change items on order #A1B2C3?",
+    "ground_truth": "Yes, as long as the order is still in 'processing' status -- go to Account Settings > Orders > [order] > Modify to change quantity, plan tier, or add an item. Once it has shipped or billing is complete, it can no longer be changed.",
+    "source_intent": "change_order"
+  },
+  {
+    "question": "How do I place an order for a new plan?",
+    "ground_truth": "Subscriptions are purchased from Plans & Pricing and hardware items from the Store tab; both use the same checkout with your saved payment method, and you'll get a confirmation email plus an entry under Account Settings > Orders immediately.",
+    "source_intent": "place_order"
+  },
+  {
+    "question": "What's the ETA on order #A1B2C3?",
+    "ground_truth": "Check Account Settings > Orders or ask the assistant 'where is my order' to see live status (processing, shipped, delivered, cancelled, refunded); tracking numbers are emailed automatically once a hardware order ships.",
+    "source_intent": "track_order"
+  },
+  {
+    "question": "What is the fee for cancelling my subscription?",
+    "ground_truth": "There's no fee if you cancel during the 14-day full-refund window. If you're on an annual plan billed monthly and cancel after that window but before the 12-month commitment ends, a $10 early-termination processing fee applies to the prorated refund.",
+    "source_intent": "check_cancellation_fee"
+  },
+  {
+    "question": "I entered the wrong shipping address, how do I update it?",
+    "ground_truth": "Edit or add shipping addresses under Account Settings > Shipping Addresses. If the order is still processing you can correct the address on the order detail page directly; once it has shipped, contact the carrier using the tracking link in your shipment email instead.",
+    "source_intent": "change_shipping_address"
+  },
+  {
+    "question": "How do I set up a new shipping address?",
+    "ground_truth": "Add it under Account Settings > Shipping Addresses -- you can save multiple addresses, such as home and office, and choose one at checkout.",
+    "source_intent": "set_up_shipping_address"
+  },
+  {
+    "question": "How do I create a separate account for a family member?",
+    "ground_truth": "Sign up at the login page with their own email address rather than sharing your login -- plans are licensed per seat, so each person should have their own account.",
+    "source_intent": "create_account"
+  },
+  {
+    "question": "How do I delete my account?",
+    "ground_truth": "Go to Account Settings > Privacy > Delete Account. This is permanent: your files, conversation history, and billing history are deleted within 30 days except where records must be retained for tax/legal purposes, and any active subscription is cancelled first.",
+    "source_intent": "delete_account"
+  },
+  {
+    "question": "How can I update my profile information?",
+    "ground_truth": "Go to Account Settings > Profile to update your name, email, or photo. Changing your email requires confirming the new address before it takes effect.",
+    "source_intent": "edit_account"
+  },
+  {
+    "question": "How do I switch between my personal and team accounts?",
+    "ground_truth": "Use the account switcher in the top-right menu -- no need to log out and back in. Switching accounts doesn't merge data between them; files and history stay separate per account.",
+    "source_intent": "switch_account"
+  },
+  {
+    "question": "I'm getting an error that my email is already in use when I try to sign up.",
+    "ground_truth": "That means you already have an account with that email -- use Forgot Password instead of registering again. If a confirmation email never arrives, check spam and use Resend confirmation email on the login page.",
+    "source_intent": "registration_problems"
+  },
+  {
+    "question": "I can't remember my password, how do I reset it?",
+    "ground_truth": "Use Forgot Password on the login page to get a reset link, valid for 30 minutes. If you no longer have access to the email on the account, file a support ticket with your account email so we can verify your identity manually.",
+    "source_intent": "recover_password"
+  },
+  {
+    "question": "What payment methods do you accept?",
+    "ground_truth": "We accept Visa, Mastercard, American Express, and PayPal on all plans; Enterprise plans (50+ seats) can also pay via invoiced bank transfer with NET-30 terms through their account manager.",
+    "source_intent": "check_payment_methods"
+  },
+  {
+    "question": "My payment failed, what should I do?",
+    "ground_truth": "We automatically retry a failed payment up to 3 times over 5 days. Common causes are an expired card, insufficient funds, or your bank flagging the charge -- update your card under Account Settings > Billing > Payment Method to trigger an immediate retry, or contact your bank to authorize charges from Meridian Suite.",
+    "source_intent": "payment_issue"
+  },
+  {
+    "question": "Where can I find my invoices?",
+    "ground_truth": "Every invoice is available under Account Settings > Billing > Invoice History as a downloadable PDF going back to your first purchase; the date filter defaults to the last 12 months.",
+    "source_intent": "check_invoice"
+  },
+  {
+    "question": "How do I download the invoice for a specific charge?",
+    "ground_truth": "Open Account Settings > Billing > Invoice History and download the PDF for that charge. If you can't find one for an older or cancelled account, file a support ticket with the approximate date and amount and we'll reissue it.",
+    "source_intent": "get_invoice"
+  },
+  {
+    "question": "How can I talk to customer support?",
+    "ground_truth": "This chat assistant is the fastest way, available 24/7 for policy, billing, and order questions. Team and Enterprise plans also have phone support -- ask the assistant to schedule a callback.",
+    "source_intent": "contact_customer_service"
+  },
+  {
+    "question": "Can I speak to a real person instead of the bot?",
+    "ground_truth": "Yes -- just ask the assistant to talk to a human, and if it can't resolve your issue after searching the knowledge base it will escalate automatically. Either way this opens a high-priority ticket and a human follows up, typically within a business day.",
+    "source_intent": "contact_human_agent"
+  },
+  {
+    "question": "I want to file a complaint about a bad support experience.",
+    "ground_truth": "File a support ticket or ask the assistant to escalate -- complaints are routed to a support lead rather than a first-line agent, separate from a general review.",
+    "source_intent": "complaint"
+  },
+  {
+    "question": "How do I leave a review of your product?",
+    "ground_truth": "Rate us from Account Settings > Feedback > Leave a Review, or reply to the review-request email sent about two weeks after you first subscribe.",
+    "source_intent": "review"
+  },
+  {
+    "question": "How do I unsubscribe from your newsletter?",
+    "ground_truth": "Click Unsubscribe at the bottom of any newsletter email, or toggle it off in Account Settings > Notifications > Email Preferences -- either way takes effect immediately and doesn't affect your subscription or account status.",
+    "source_intent": "newsletter_subscription"
+  },
+  {
+    "question": "What is your refund policy?",
+    "ground_truth": "First-time subscription purchases get a full refund within 14 days, no questions asked. Annual plans billed monthly can get a prorated refund for unused months if cancelled before the 12-month commitment ends, minus a $10 early-termination fee. Renewal charges are refundable up to 7 days after the renewal date if the seat wasn't used. Add-ons and one-time purchases are non-refundable once activated.",
+    "source_intent": "check_refund_policy"
+  },
+  {
+    "question": "How do I request a refund?",
+    "ground_truth": "Open a support ticket with your order ID and the reason for the refund; it will be processed to your original payment method within 5-10 business days. Enterprise accounts should contact their account manager instead.",
+    "source_intent": "get_refund"
+  },
+  {
+    "question": "Is there a way to check the status of my refund?",
+    "ground_truth": "Yes, check Account Settings > Billing > Refund History to see whether it's requested, processing, or paid, or ask the assistant to check it for you. If it's been more than 10 business days since approval and it hasn't posted, file a ticket referencing the original ticket number.",
+    "source_intent": "track_refund"
+  },
+  {
+    "question": "What shipping options do you offer?",
+    "ground_truth": "Standard shipping (5-7 business days, free over $50), express shipping (2-3 business days, $12.99), and overnight shipping if ordered before 2pm local time ($29.99).",
+    "source_intent": "delivery_options"
+  },
+  {
+    "question": "How long will it take for my order to arrive?",
+    "ground_truth": "It depends on the shipping method chosen: standard takes 5-7 business days, express takes 2-3 business days, and overnight arrives the next business day if ordered before 2pm local time.",
+    "source_intent": "delivery_period"
+  }
+]
