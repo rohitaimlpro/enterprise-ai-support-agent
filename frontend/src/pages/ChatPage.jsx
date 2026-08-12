@@ -4,7 +4,7 @@ import ConversationSidebar from '../components/ConversationSidebar'
 import { apiFetch, streamChat } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 
-export default function ChatPage({ onShowEvalDashboard }) {
+export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
   const { user, logout } = useAuth()
   const [conversations, setConversations] = useState([])
   const [activeId, setActiveId] = useState(null)
@@ -97,6 +97,11 @@ export default function ChatPage({ onShowEvalDashboard }) {
           <h2>Meridian Suite Support</h2>
           <div className="chat-header-actions">
             <span className="chat-user">{user?.full_name}</span>
+            {onShowAdminTraces && (
+              <button className="link-button" onClick={onShowAdminTraces}>
+                Admin traces
+              </button>
+            )}
             <button className="link-button" onClick={onShowEvalDashboard}>
               Eval dashboard
             </button>

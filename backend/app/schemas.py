@@ -31,6 +31,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     full_name: str
+    is_admin: bool = False
 
 
 # ---------- Chat ----------
@@ -60,6 +61,7 @@ class MessageResponse(BaseModel):
     content: str
     sources: list[dict] = []
     tool_calls: list[dict] = []
+    guardrail_flags: list[str] = []
     created_at: datetime
 
 
@@ -69,6 +71,18 @@ class ConversationResponse(BaseModel):
     id: str
     title: str
     created_at: datetime
+    messages: list[MessageResponse] = []
+
+
+class AdminConversationResponse(BaseModel):
+    """Same shape as ConversationResponse, plus which user it belongs to
+    -- only meaningful for the admin trace view, since a normal user's
+    own conversation list never needs to say whose it is."""
+
+    id: str
+    title: str
+    created_at: datetime
+    user_email: str
     messages: list[MessageResponse] = []
 
 

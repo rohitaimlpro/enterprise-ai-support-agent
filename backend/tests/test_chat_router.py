@@ -50,7 +50,8 @@ class FakeGraph:
                                 "source_file": "refund_policy.md",
                                 "snippet": "Full refund within 14 days.",
                             }
-                        ]
+                        ],
+                        "guardrail_flags": ["prompt_injection_phrasing"],
                     }
                 },
             },
@@ -109,6 +110,7 @@ def test_chat_streams_tokens_tool_call_and_done(client, db_session, monkeypatch)
     assert "world!" in body
     assert "search_knowledge_base" in body
     assert "Refund Policy" in body
+    assert "prompt_injection_phrasing" in body
     assert "event: done" in body
 
 
@@ -143,8 +145,35 @@ def test_chat_persists_user_and_assistant_messages(client, db_session, monkeypat
     assert [m.role.value for m in messages] == ["user", "assistant"]
     assert messages[1].content == "Hello world!"
     assert messages[1].sources[0]["title"] == "Refund Policy"
+    assert messages[1].guardrail_flags == ["prompt_injection_phrasing"]
 
 
 def test_chat_requires_auth(client):
     resp = client.post("/chat", json={"message": "hi"})
     assert resp.status_code in (401, 403)
+
+
+class TestExtractText:
+    """Newer Gemini models can stream `.content` as a list of content
+    blocks (e.g. a 'thinking' block alongside a 'text' block) instead of
+    a plain string -- caught live when gemini-2.5-flash returned a list
+    and broke `full_answer += chunk.content` with a TypeError."""
+
+    def test_plain_string(self):
+        assert chat_router_module._extract_text("hello") == "hello"
+
+    def test_list_of_text_blocks(self):
+        content = [{"type": "text", "text": "hel"}, {"type": "text", "text": "lo"}]
+        assert chat_router_module._extract_text(content) == "hello"
+
+    def test_list_skips_non_text_blocks(self):
+        content = [{"type": "thinking", "thinking": "reasoning..."}, {"type": "text", "text": "answer"}]
+        assert chat_router_module._extract_text(content) == "answer"
+
+    def test_list_of_plain_strings(self):
+        assert chat_router_module._extract_text(["a", "b"]) == "ab"
+
+    def test_empty_or_none(self):
+        assert chat_router_module._extract_text(None) == ""
+        assert chat_router_module._extract_text([]) == ""
+        assert chat_router_module._extract_text("") == ""

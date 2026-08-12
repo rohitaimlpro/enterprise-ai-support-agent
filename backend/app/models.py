@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -38,6 +39,10 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
+    # Authorization layer on top of authentication: a valid JWT proves who
+    # you are, this controls what you're allowed to do (see deps.py's
+    # get_current_admin_user). Everyone is a normal user by default.
+    is_admin = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=_now)
 
     conversations = relationship("Conversation", back_populates="user")
@@ -78,6 +83,11 @@ class Message(Base):
     sources = Column(JSONType(), default=list)
     # List[{"name": str, "args": dict}] -- which tools the agent called for this turn.
     tool_calls = Column(JSONType(), default=list)
+    # List[str] of reasons (e.g. "prompt_injection_phrasing") the output
+    # guardrail flagged during this turn -- see agent/guardrails.py.
+    # Empty on the vast majority of turns; non-empty is what the admin
+    # trace view highlights.
+    guardrail_flags = Column(JSONType(), default=list)
     created_at = Column(DateTime(timezone=True), default=_now)
 
     conversation = relationship("Conversation", back_populates="messages")

@@ -47,7 +47,9 @@ services:
     volumes:
       - chroma_data:/app/chroma_data
       - eval_results:/app/eval_results
+      - security_results:/app/security_results
       - ./eval:/app/eval:ro
+      - ./security:/app/security:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,3 +99,4 @@ volumes:
   postgres_data:
   chroma_data:
   eval_results:
+  security_results:

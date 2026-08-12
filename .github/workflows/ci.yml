@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on every push/PR. Deliberately limited to what's free and fast:
+# the 38-test pytest suite (in-memory SQLite, no API key, no external
+# services) and a frontend build/lint. The red-team suite
+# (security/red_team.py) and the RAGAS eval (eval/run_eval.py) both need
+# a real GOOGLE_API_KEY and call the live Gemini API on every run -- that
+# cost/latency makes them manual/scheduled scripts, not something to run
+# on every push. See README "Dependency notes" for why.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: backend
+        run: pytest -v
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build

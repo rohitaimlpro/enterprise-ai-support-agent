@@ -17,6 +17,7 @@ import json
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 
+from app.agent.guardrails import filter_tool_output
 from app.agent.llm import get_llm
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.state import AgentState
@@ -42,6 +43,7 @@ def build_agent_graph(mcp_tools: list):
         last_message: AIMessage = state["messages"][-1]
         tool_messages = []
         new_sources = []
+        new_flags = []
 
         for call in last_message.tool_calls:
             tool = tools_by_name[call["name"]]
@@ -58,11 +60,19 @@ def build_agent_graph(mcp_tools: list):
             else:
                 result_text = result
 
+            # Every tool result is untrusted content from a document store
+            # or a database, not from the user -- run it through the
+            # guardrail (PII / injection-phrase check) and wrap it so the
+            # model can't mistake it for an instruction. See guardrails.py.
+            safe_text, flag_reason = filter_tool_output(result_text, tool_name=call["name"])
+            if flag_reason:
+                new_flags.append(flag_reason)
+
             tool_messages.append(
-                ToolMessage(content=result_text, tool_call_id=call["id"], name=call["name"])
+                ToolMessage(content=safe_text, tool_call_id=call["id"], name=call["name"])
             )
 
-        return {"messages": tool_messages, "sources": new_sources}
+        return {"messages": tool_messages, "sources": new_sources, "guardrail_flags": new_flags}
 
     def should_continue(state: AgentState) -> str:
         last_message = state["messages"][-1]

@@ -15,7 +15,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.config import get_settings
 
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "models/gemini-embedding-001"
 COLLECTION_NAME = "support_docs"
 
 

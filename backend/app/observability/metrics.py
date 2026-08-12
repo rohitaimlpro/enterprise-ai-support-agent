@@ -33,3 +33,9 @@ chat_turn_latency_seconds = Histogram(
     "support_agent_chat_turn_latency_seconds",
     "End-to-end latency of one chat turn, including all tool calls and model round trips",
 )
+
+guardrail_flags_total = Counter(
+    "support_agent_guardrail_flags_total",
+    "Number of times a tool result was flagged and filtered by the output guardrail",
+    ["reason"],
+)

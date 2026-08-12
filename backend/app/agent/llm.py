@@ -6,9 +6,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import get_settings
 
 # "Flash" models are fast and cheap enough for a support chatbot's latency
-# budget; swap for "gemini-2.0-pro" if you want stronger reasoning at the
-# cost of latency.
-CHAT_MODEL = "gemini-2.0-flash"
+# budget. Pinned to the dated 2.5 release rather than "gemini-flash-latest"
+# -- the latest alias can shift models under us without warning, and
+# newer models add "thinking" output that complicates tool-call parsing.
+CHAT_MODEL = "gemini-2.5-flash"
 
 
 def get_llm(tools: list[BaseTool] | None = None) -> ChatGoogleGenerativeAI:

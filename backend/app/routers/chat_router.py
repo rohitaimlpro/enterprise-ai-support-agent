@@ -36,6 +36,24 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 logger = get_logger(__name__)
 
 
+def _extract_text(content) -> str:
+    """A streamed chunk's `.content` is usually a plain string, but newer
+    Gemini models can return a list of content blocks instead (e.g. a
+    separate "thinking" block alongside a "text" block) -- pull out just
+    the user-facing text, in whichever shape it arrives."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+        return "".join(parts)
+    return ""
+
+
 def _get_or_create_conversation(
     db: Session, user: User, conversation_id: str | None, first_message: str
 ) -> Conversation:
@@ -132,12 +150,14 @@ async def chat(
         full_answer = ""
         collected_sources: list[dict] = []
         collected_tool_calls: list[dict] = []
+        collected_guardrail_flags: list[str] = []
 
         async with mcp_tools_session(current_user.id) as mcp_tools:
             graph = build_agent_graph(mcp_tools)
             initial_state = {
                 "messages": [*history_messages, HumanMessage(content=payload.message)],
                 "sources": [],
+                "guardrail_flags": [],
             }
 
             # astream_events gives us both token-level streaming (from the
@@ -148,9 +168,10 @@ async def chat(
 
                 if kind == "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
-                    if chunk.content:
-                        full_answer += chunk.content
-                        yield {"event": "token", "data": json.dumps({"content": chunk.content})}
+                    text = _extract_text(chunk.content)
+                    if text:
+                        full_answer += text
+                        yield {"event": "token", "data": json.dumps({"content": text})}
 
                 elif kind == "on_tool_start":
                     tool_call = {"name": event["name"], "args": event["data"].get("input", {})}
@@ -165,6 +186,9 @@ async def chat(
                     new_sources = output.get("sources") if isinstance(output, dict) else None
                     if new_sources:
                         collected_sources.extend(new_sources)
+                    new_flags = output.get("guardrail_flags") if isinstance(output, dict) else None
+                    if new_flags:
+                        collected_guardrail_flags.extend(new_flags)
 
         latency_seconds = time.monotonic() - start
         chat_turn_latency_seconds.observe(latency_seconds)
@@ -176,6 +200,7 @@ async def chat(
             content=full_answer,
             sources=collected_sources,
             tool_calls=collected_tool_calls,
+            guardrail_flags=collected_guardrail_flags,
         )
         db.add(assistant_message)
         db.commit()
@@ -190,6 +215,7 @@ async def chat(
             tool_calls=[t["name"] for t in collected_tool_calls],
             sources_used=len(collected_sources),
             answer_length=len(full_answer),
+            guardrail_flags=collected_guardrail_flags,
         )
 
         yield {
@@ -200,6 +226,7 @@ async def chat(
                     "message_id": assistant_message.id,
                     "sources": collected_sources,
                     "tool_calls": collected_tool_calls,
+                    "guardrail_flags": collected_guardrail_flags,
                 }
             ),
         }

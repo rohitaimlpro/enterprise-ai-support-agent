@@ -18,3 +18,7 @@ frontend/dist/
 # Editor
 .vscode/
 .idea/
+.claude/
+
+# Local security scan output
+backend/security_results/

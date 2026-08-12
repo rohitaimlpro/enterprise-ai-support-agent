@@ -336,3 +336,110 @@
   font-weight: 700;
   color: var(--text-h);
 }
+
+/* ---------- Admin trace viewer ---------- */
+
+.trace-status {
+  padding: 0 24px;
+  color: var(--text-muted);
+}
+
+.trace-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.trace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.trace-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.trace-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-bg);
+  flex-wrap: wrap;
+}
+
+.trace-user {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.trace-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-h);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trace-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.trace-message {
+  border-left: 3px solid var(--border);
+  padding: 4px 0 4px 12px;
+}
+
+.trace-message-assistant {
+  border-left-color: var(--accent);
+}
+
+.trace-message-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.trace-role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.trace-content {
+  margin: 4px 0;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.guardrail-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--danger);
+  font-weight: 700;
+}

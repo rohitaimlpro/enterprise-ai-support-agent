@@ -8,7 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine
 from app.observability.logging_config import configure_logging
 from app.observability.metrics import instrument_app
-from app.routers import auth_router, chat_router, eval_router, orders_router, tickets_router
+from app.routers import (
+    admin_router,
+    auth_router,
+    chat_router,
+    eval_router,
+    orders_router,
+    tickets_router,
+)
 
 
 @asynccontextmanager
@@ -38,6 +45,7 @@ app.include_router(chat_router.router)
 app.include_router(tickets_router.router)
 app.include_router(orders_router.router)
 app.include_router(eval_router.router)
+app.include_router(admin_router.router)
 
 
 @app.get("/health")

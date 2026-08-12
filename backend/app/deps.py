@@ -30,3 +30,17 @@ def get_current_user(
         raise unauthorized
 
     return user
+
+
+def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """Authentication (get_current_user) proves who you are; this is the
+    separate authorization check for what you're allowed to do. Any
+    authenticated user can reach this dependency, but only one whose
+    is_admin flag is set gets past it -- everyone else gets a 403, not a
+    401 (they're a valid, known user, just not allowed here)."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
