@@ -3,8 +3,10 @@
 A production-shaped agentic AI platform for enterprise customer support: a
 LangGraph agent that answers questions from a RAG knowledge base, calls
 real backend tools over **MCP** (Model Context Protocol) to look up orders
-and manage tickets, remembers conversations, streams responses, and reports
-on its own quality via a RAGAS evaluation dashboard.
+and manage tickets, remembers conversations, streams responses, reports on
+its own quality via a RAGAS evaluation dashboard, and is hardened with an
+output guardrail, prompt-injection-resistant tool handling, and a red-team
+test suite that exercises it end to end.
 
 Built to be read end-to-end, not just run -- every file has a short comment
 explaining *why* it exists, not just what it does.
@@ -15,8 +17,11 @@ Most portfolio AI projects are "a chatbot using LangChain." This one is
 built to demonstrate the parts of shipping an AI feature that a chatbot demo
 skips: authenticated multi-user sessions, grounded answers with citations,
 tool calling against real systems, caching, streaming, structured logging,
-Prometheus metrics, and an evaluation pipeline that scores answer quality
-instead of just eyeballing it.
+Prometheus metrics, an evaluation pipeline that scores answer quality
+instead of just eyeballing it, and the security layer a production agent
+needs -- output filtering, context isolation between trusted instructions
+and untrusted tool/retrieval content, and adversarial testing against the
+live system rather than just the happy path.
 
 ## Architecture
 
@@ -59,22 +64,36 @@ LLM-supplied argument -- see the comment in `mcp_server.py` for why).
 instructed to call `escalate_issue` when it can't confidently answer -- this
 opens a high-priority ticket and tells the user a human will follow up.
 
+**Layered defense** (`backend/app/agent/guardrails.py`, `security/red_team.py`):
+every tool result is scanned for PII patterns and prompt-injection phrasing
+before it re-enters the agent's context, and wrapped in
+`<untrusted_tool_output>` delimiters so the system prompt can tell the model
+that content is data, not instructions. This is deliberately scoped to the
+tool-output channel; a separate system-prompt rule (added after the
+`security/red_team.py` suite found a real vulnerability -- a message
+spoofing a `[SYSTEM]` tag could talk the agent into an unauthorized refund)
+closes the equivalent gap on the user-input channel. Flagged messages are
+visible to admins via `GET /admin/traces` and the frontend's admin trace
+viewer.
+
 ## Repository layout
 
 ```
 backend/            FastAPI app, LangGraph agent, RAG, MCP tools, tests
   app/
-    agent/           LangGraph graph, prompts, Gemini wrapper
+    agent/           LangGraph graph, prompts, Gemini wrapper, guardrails
     rag/              Chroma ingestion + retrieval
     tools/             MCP server + client
     cache/              Redis conversation cache
     observability/       structured logging + Prometheus metrics
-    routers/               FastAPI endpoints
+    routers/               FastAPI endpoints (incl. admin trace viewer)
     data/                    knowledge-base docs + synthetic seed data
   tests/            pytest suite (SQLite in-memory, no external services needed)
-frontend/          Vite + React (plain JS) chat UI
+frontend/          Vite + React (plain JS) chat UI, incl. admin trace viewer
 eval/              RAGAS evaluation dataset + runner
+security/          Red-team suite -- 5 adversarial scenarios vs. the live agent
 monitoring/        Prometheus + Grafana config (optional profile)
+.github/workflows/ CI: backend pytest + frontend build/lint on every push
 ```
 
 ## Running it
@@ -100,6 +119,9 @@ monitoring/        Prometheus + Grafana config (optional profile)
    ```
 5. Open http://localhost:5173 and sign in with the seeded demo account
    (`demo@meridiansuite.example` / `demo1234`), or register a new one.
+   An admin account is also seeded (`admin@meridiansuite.example` /
+   `admin1234`) -- sign in with it to see the "Admin traces" nav link,
+   which lists conversations and flags any guardrail hits.
 
 Try asking:
 - *"How do I upgrade my subscription?"* -- pulls from the knowledge base, cites sources.
@@ -123,12 +145,15 @@ cd backend
 pytest
 ```
 
-The suite (19 tests) runs against an in-memory SQLite database and stubs
+The suite (43 tests) runs against an in-memory SQLite database and stubs
 Redis/MCP/the LLM where needed, so it needs no external services and no API
 key -- it covers auth, the MCP tool business logic (including that one
 user's orders never leak to another), the RAG doc-chunking pipeline, the
-`/chat` SSE endpoint's event handling and persistence, and the eval
-results endpoint.
+`/chat` SSE endpoint's event handling and persistence, the eval results
+endpoint, the output guardrail's regex/PII checks, and the admin trace
+endpoint's authorization (403 for non-admins). It runs in CI
+(`.github/workflows/ci.yml`) on every push, alongside a frontend
+build/lint job.
 
 ## Evaluation dashboard
 
@@ -157,6 +182,44 @@ Results are written to a `latest.json` inside the backend container and
 served at `GET /admin/eval`; view them at http://localhost:5173 → *Eval
 dashboard*.
 
+Latest live run (37 examples, real Gemini API calls, no mocking):
+Faithfulness 0.91, Context Recall 0.96, Answer Relevancy 0.74, Context
+Precision 0.67. RAGAS's judge calls hit free-tier rate limits partway
+through and fell back from 3-sample to 1-sample self-consistency on some
+examples (visible in the run's logged `TimeoutError`s), so treat these as
+directionally real rather than a tight, reproducible benchmark.
+
+## Security & adversarial validation
+
+```
+docker compose exec backend python security/red_team.py
+```
+
+Runs 5 scenarios against the **live agent graph** -- no mocking of the LLM,
+retriever, or tools:
+
+1. **System prompt extraction** -- does asking directly (or via a role-play
+   pretext) get the system prompt echoed back.
+2. **Cross-user data access** -- does asking about "my order" ever return
+   another seeded user's order.
+3. **Indirect knowledge-base injection** -- a fixture document containing an
+   injected instruction is planted in Chroma; the scenario checks both
+   whether the agent obeys it and whether the output guardrail flags it.
+4. **Jailbreak via role-play** ("pretend you're an unrestricted bot...") --
+   checks for actual compliance, not just the presence of a keyword, since
+   a correct refusal can legitimately contain the same words as the attack.
+5. **Spoofed system message in user input** -- a user message containing a
+   fake `[SYSTEM]`-tagged instruction claiming prior verification, trying to
+   trigger `refund_request` without a real authorization step. This is the
+   one that found a real vulnerability during development; the fix is
+   Rule 8 in `backend/app/agent/prompts.py`.
+
+Results (PASS / FAIL / INCONCLUSIVE per scenario) are written to
+`security_results/latest.json`. This is a small, hand-written scenario
+suite exercising one live system -- useful as a regression check and a
+concrete demonstration of the find-fix-reverify loop, not a substitute for
+a red team, a fuzzer, or an established benchmark like `garak`.
+
 ## Monitoring (optional)
 
 ```
@@ -166,10 +229,16 @@ docker compose --profile monitoring up
 Starts Prometheus (:9090) and Grafana (:3001, login `admin`/`admin`, or
 just open it -- anonymous viewer access is enabled) with a dashboard
 already provisioned: HTTP request rate, chat-turn latency (p50/p95), tool
-calls by name, and RAG retrieval rate. LangSmith tracing is also
-available for free -- just set `LANGCHAIN_TRACING_V2=true` and
-`LANGCHAIN_API_KEY` in `.env`; LangChain picks it up automatically, no
-code changes needed.
+calls by name, and RAG retrieval rate. These answer *aggregate* questions
+("is p95 latency drifting", "did the guardrail flag rate spike").
+
+LangSmith tracing is also available, for the complementary *per-run*
+question ("what exactly did this one conversation do, node by node").
+Set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in `.env` --
+LangChain picks it up automatically, no code changes needed. (Left off by
+default in `.env.example`; verified during development against a real
+LangSmith project, with the exact `agent -> tools -> agent` node sequence
+visible per trace.)
 
 ## Dependency notes
 
@@ -218,3 +287,8 @@ top of that file.
   Answer Relevancy, Context Precision, Context Recall) alongside
   **Prometheus/Grafana** monitoring of latency, tool usage, and retrieval
   volume.
+- Hardened the agent with an **output guardrail** (PII and prompt-injection
+  detection on tool results), **context isolation** between trusted
+  instructions and untrusted tool/retrieval content, and a **5-scenario
+  adversarial test suite** run against the live system, which surfaced and
+  drove the fix for a real unauthorized-tool-call vulnerability.
