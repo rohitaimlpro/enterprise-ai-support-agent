@@ -47,7 +47,7 @@ export async function apiFetch(path, { method = 'GET', body, auth = false } = {}
  * into frames ourselves since the browser has no built-in SSE-over-POST
  * client (EventSource only supports GET).
  */
-export async function streamChat({ message, conversationId, onToken, onToolCall, onDone, onError }) {
+export async function streamChat({ message, conversationId, onToken, onToolCall, onStatus, onDone, onError }) {
   const token = getToken()
 
   let response
@@ -94,6 +94,7 @@ export async function streamChat({ message, conversationId, onToken, onToolCall,
 
       if (eventType === 'token') onToken?.(data.content)
       else if (eventType === 'tool_call') onToolCall?.(data)
+      else if (eventType === 'status') onStatus?.(data.text)
       else if (eventType === 'done') onDone?.(data)
     }
   }

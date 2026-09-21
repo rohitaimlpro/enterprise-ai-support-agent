@@ -1,7 +1,7 @@
 import SourceCitations from './SourceCitations'
 import ToolCallBadge from './ToolCallBadge'
 
-export default function MessageBubble({ role, content, sources, toolCalls, streaming }) {
+export default function MessageBubble({ role, content, sources, toolCalls, streaming, status, uncertain }) {
   const isUser = role === 'user'
 
   return (
@@ -14,10 +14,12 @@ export default function MessageBubble({ role, content, sources, toolCalls, strea
             ))}
           </div>
         )}
+        {streaming && !content && status && <p className="message-status">{status}</p>}
         <p className="message-content">
           {content}
           {streaming && <span className="cursor-blink">|</span>}
         </p>
+        {uncertain && <p className="message-uncertain">The microphone may have misheard this. Say it again if it looks wrong.</p>}
         <SourceCitations sources={sources} />
       </div>
     </div>

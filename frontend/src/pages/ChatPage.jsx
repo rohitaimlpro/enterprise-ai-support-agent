@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ChatWindow from '../components/ChatWindow'
 import ConversationSidebar from '../components/ConversationSidebar'
+import VoiceControls from '../components/VoiceControls'
 import { apiFetch, streamChat } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 
@@ -12,6 +13,10 @@ export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
   const [streamingMessage, setStreamingMessage] = useState(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
+  const voiceStopRef = useRef(null)
+  // Mirrors the in-flight spoken reply so 'done'/'interrupted' can finalize
+  // it synchronously (same reason handleSend tracks accumulatedText).
+  const voiceDraftRef = useRef(null)
 
   const refreshConversations = useCallback(async () => {
     const data = await apiFetch('/chat/conversations', { auth: true })
@@ -24,6 +29,7 @@ export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
   }, [refreshConversations])
 
   async function selectConversation(id) {
+    voiceStopRef.current?.() // a call is bound to one conversation
     setActiveId(id)
     setStreamingMessage(null)
     const data = await apiFetch(`/chat/conversations/${id}`, { auth: true })
@@ -31,6 +37,7 @@ export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
   }
 
   function startNewChat() {
+    voiceStopRef.current?.()
     setActiveId(null)
     setMessages([])
     setStreamingMessage(null)
@@ -57,6 +64,9 @@ export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
       onToolCall: (call) => {
         setStreamingMessage((prev) => ({ ...prev, toolCalls: [...prev.toolCalls, call] }))
       },
+      onStatus: (text) => {
+        setStreamingMessage((prev) => ({ ...prev, status: text }))
+      },
       onDone: async (data) => {
         setStreamingMessage(null)
         setMessages((prev) => [
@@ -82,6 +92,90 @@ export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
         setSending(false)
       },
     })
+  }
+
+  // Moves the in-flight spoken reply (if any) from "streaming" into the
+  // message list, keeping exactly what was shown as captions.
+  function finalizeVoiceDraft(extra = {}) {
+    const draft = voiceDraftRef.current
+    voiceDraftRef.current = null
+    setStreamingMessage(null)
+    if (draft && draft.content.trim()) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: extra.id ?? `voice-${draft.turn}`,
+          role: 'assistant',
+          content: draft.content,
+          sources: extra.sources ?? [],
+          tool_calls: extra.tool_calls ?? draft.toolCalls,
+        },
+      ])
+    }
+  }
+
+  async function handleVoiceEvent(evt) {
+    switch (evt.type) {
+      case 'ready':
+        setError(null)
+        if (evt.conversation_id) setActiveId(evt.conversation_id)
+        break
+      case 'transcript':
+        setMessages((prev) => {
+          // "merged": the user paused mid-sentence and the server joined both halves
+          // into one request, so replace the earlier fragment instead of adding a second bubble.
+          if (evt.merged) {
+            const last = prev.findLastIndex((m) => m.role === 'user')
+            if (last >= 0) return prev.map((m, i) => (i === last ? { ...m, content: evt.text, uncertain: evt.low_confidence } : m))
+          }
+          return [...prev, { id: `voice-user-${evt.turn_id}-${Date.now()}`, role: 'user', content: evt.text, uncertain: evt.low_confidence }]
+        })
+        break
+      case 'turn_start':
+        finalizeVoiceDraft() // a superseded turn never gets a 'done'
+        voiceDraftRef.current = { turn: evt.turn_id, content: '', toolCalls: [] }
+        setStreamingMessage({ content: '', toolCalls: [] })
+        break
+      case 'token':
+        if (voiceDraftRef.current?.turn === evt.turn_id) {
+          voiceDraftRef.current.content += evt.content
+          setStreamingMessage({ ...voiceDraftRef.current })
+        }
+        break
+      case 'tool_call':
+        if (voiceDraftRef.current?.turn === evt.turn_id) {
+          voiceDraftRef.current.toolCalls.push({ name: evt.name, args: evt.args })
+          setStreamingMessage({ ...voiceDraftRef.current })
+        }
+        break
+      case 'status': // "checking the knowledge base..." while a tool runs
+        if (voiceDraftRef.current?.turn === evt.turn_id) {
+          voiceDraftRef.current.status = evt.text
+          setStreamingMessage({ ...voiceDraftRef.current })
+        }
+        break
+      case 'notice': // canned spoken lines: reprompts, warnings, "are you still there?"
+        setMessages((prev) => [...prev, { id: `notice-${Date.now()}`, role: 'assistant', content: evt.text }])
+        break
+      case 'interrupted':
+        // cancelled=false means a refund/cancel is still finishing: keep the
+        // streaming message, a 'done' will follow.
+        if (evt.cancelled) finalizeVoiceDraft()
+        break
+      case 'done': {
+        const isNew = !activeId
+        finalizeVoiceDraft({ sources: evt.sources, tool_calls: evt.tool_calls })
+        setActiveId(evt.conversation_id)
+        if (isNew) await refreshConversations()
+        break
+      }
+      case 'tts_unavailable':
+      case 'client_error':
+      case 'error':
+        setError(evt.message)
+        break
+      default:
+    }
   }
 
   return (
@@ -111,6 +205,7 @@ export default function ChatPage({ onShowEvalDashboard, onShowAdminTraces }) {
           </div>
         </header>
         {error && <p className="auth-error">{error}</p>}
+        <VoiceControls conversationId={activeId} onEvent={handleVoiceEvent} stopRef={voiceStopRef} />
         <ChatWindow
           messages={messages}
           streamingMessage={streamingMessage}

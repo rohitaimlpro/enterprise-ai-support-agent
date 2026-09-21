@@ -36,6 +36,7 @@ export default function ChatWindow({ messages, streamingMessage, onSend, sending
             content={m.content}
             sources={m.sources}
             toolCalls={m.tool_calls}
+            uncertain={m.uncertain}
           />
         ))}
 
@@ -44,6 +45,7 @@ export default function ChatWindow({ messages, streamingMessage, onSend, sending
             role="assistant"
             content={streamingMessage.content}
             toolCalls={streamingMessage.toolCalls}
+            status={streamingMessage.status}
             sources={[]}
             streaming
           />
