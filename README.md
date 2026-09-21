@@ -145,7 +145,7 @@ cd backend
 pytest
 ```
 
-The suite (43 tests) runs against an in-memory SQLite database and stubs
+The suite (260+ tests, including the voice pipeline's edge cases) runs against an in-memory SQLite database and stubs
 Redis/MCP/the LLM where needed, so it needs no external services and no API
 key -- it covers auth, the MCP tool business logic (including that one
 user's orders never leak to another), the RAG doc-chunking pipeline, the
@@ -154,6 +154,112 @@ endpoint, the output guardrail's regex/PII checks, and the admin trace
 endpoint's authorization (403 for non-admins). It runs in CI
 (`.github/workflows/ci.yml`) on every push, alongside a frontend
 build/lint job.
+
+## Realtime voice (Groq Whisper STT + Azure Neural TTS)
+
+The same LangGraph agent, reachable by voice. Voice is a second *transport*
+(WebSocket `/voice`) around the existing agent -- `agent/turn.py` is the
+single "run one turn" implementation that both `/chat` (SSE) and `/voice`
+use, so tools, RAG, guardrails, persistence and metrics behave identically.
+
+```
+mic -> browser VAD (Silero) -> utterance (PCM16 16 kHz) --WS--> Groq whisper-large-v3-turbo
+                                                                      | transcript
+   speaker <- queued playback <--WS-- Azure Neural TTS <- sentence chunker <- agent tokens
+```
+
+**Enable it:** set `GROQ_API_KEY`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`
+in `.env` (see `.env.example`), rebuild the backend image, then click
+"Start voice" in the chat header. Without Azure keys you get live captions
+only; without a Groq key the call reports "voice unavailable" and text chat is
+unaffected.
+
+**Where things live:** `backend/app/voice/` (`session.py` turn-taking and
+edge cases, `stt.py`, `tts.py`, `confirm.py`, `text_utils.py`),
+`routers/voice_router.py` (auth + capacity), `frontend/src/api/voice.js`
+(mic, VAD, playback, barge-in, reconnect). The WebSocket protocol is
+documented at the top of `voice/session.py`.
+
+**Edge cases handled on purpose** (each has a test in `tests/test_voice_*.py`):
+
+- *Noise / silence / Whisper hallucinations* -- too-short or too-quiet clips never reach Groq;
+  confident-looking "Thank you." on silence is dropped using Whisper's own `no_speech_prob`/`avg_logprob`.
+- *STT failure or empty transcript* -- spoken reprompt, capped at 3, then "switch to typing".
+- *TTS failure* -- captions continue; the call doesn't die.
+- *Barge-in* -- the client flushes audio and the server cancels the turn; audio frames carry a
+  `turn_id` so late frames from an interrupted turn are discarded. History stores only what was
+  actually spoken.
+- *Never cancel a refund/cancel mid-write* -- an interrupt during those tools only mutes audio;
+  the write finishes and the next utterance waits its turn.
+- *Misheard order numbers / spoken prompt injection* -- `refund_request` and `cancel_order` are
+  **code-gated** (`voice/confirm.py`): they don't run unless the user's previous utterance was an
+  explicit short "yes" to a read-back of that exact call. Prompt rules 9-13 add phrasing guidance,
+  but the gate doesn't depend on the model obeying them.
+- *Card numbers spoken aloud* -- Luhn-checked, redacted before storage/LLM, user warned.
+- *Lifecycle* -- heartbeat, idle prompt then close, per-call time cap, concurrent-call cap,
+  one live call per user, JWT expiry mid-call, auto-reconnect that resumes the conversation.
+
+**Language & voice:** the assistant answers in Hinglish (Hindi-English mix, Roman script) by default
+-- set `ASSISTANT_LANGUAGE=english` to turn that off. Whenever a tool or knowledge-base search runs,
+the user gets a short "checking..." line: spoken on voice calls and shown in the chat bubble on both
+channels (`voice/phrases.py` holds every system-spoken line in both languages, phrased
+gender-neutrally). Refund/cancel confirmations understand Hinglish and Devanagari ("haan kar do",
+"हाँ"), and hedges ("haan lekin ruko") are correctly refused. For a **Custom Neural Voice**, set
+`AZURE_TTS_ENDPOINT_ID` and put the custom voice's name in `AZURE_TTS_VOICE`; on any failure it falls
+back to `AZURE_TTS_FALLBACK_VOICE`. Training and deploying the custom voice itself happens in Azure
+Speech Studio (Microsoft gates access to it) -- nothing in this repo can create one.
+
+**One-to-one conversation handling** (`voice/session.py`; each has a test in `tests/test_voice_conversation_edges.py`).
+An incoming utterance is *transcribed first and only then acted on*, so:
+the agent hearing its own voice through the speakers (echo) is detected by comparing what was
+"heard" with what was just said, and dropped without cutting the answer off; "hmm"/"haan"/"okay"
+while it talks are ignored; a sentence split by a pause ("I want a refund ... for my tablet") is
+merged into one request when the second half arrives before the agent starts answering (the stored
+first half is retracted from history); an unintelligible clip under the agent's voice never triggers
+"sorry, say again"; answers are read aloud only up to `VOICE_MAX_SPOKEN_CHARS` and then say the rest is
+in the chat; a short goodbye ("bas itna hi, bye") makes the agent say farewell and the call ends after
+it plays; Hindi number words ("nau aath saat...") become digits. Browser side (`frontend/src/api/voice.js`):
+half-duplex by default -- the microphone is ignored while the agent talks and for 0.5 s after -- because on
+laptop speakers the mic hears the agent; tick "Let me interrupt (headphones)" to allow talking over it
+(needs 0.6 s of sustained speech).
+
+**Interrupting (`frontend/src/api/voice.js`):** "duck, then confirm". When the microphone hears clear speech
+over the agent for 0.3 s the agent's audio is *paused at once*; your utterance goes to the server, which
+transcribes it and answers with a verdict -- a real request (`transcript`: the old audio is discarded and
+the agent answers the new thing) or a false alarm (`ignored`: echo, "hmm", noise -- playback resumes where it
+stopped). A **Stop** button and a "Let me interrupt" toggle are always available. This logic has no browser in
+CI, so it is tested with a fake clock and fake audio context: `cd frontend && npm test`.
+
+**Word errors:** Whisper's output is repaired before the agent (and the refund confirmation gate) sees it --
+known misspellings and Devanagari forms of key words are normalised (`रिफंड` -> `refund`, `rene do` /
+`rehnye do` -> `rehne do`), the user's own product names are passed to Whisper as vocabulary, transcripts Whisper
+was mostly guessing at (mean log-prob below -1.1) are not acted on (the user is asked to repeat), and
+borderline ones are shown with a "may have been misheard" note.
+
+**Voice picker:** the header offers a dropdown of Azure Indian voices with a Preview button
+(`GET /voice/voices`, `GET /voice/sample`); only voices in `AZURE_TTS_VOICES` are accepted from a client.
+
+**Latency choices** (measured warm): Gemini "thinking" is off (`thinking_budget=0`, ~4.4 s -> ~1.35 s per
+call). MCP tool subprocesses are pooled per user and kept warm for 5 minutes (`tools/mcp_client.py`;
+capped at 20, closed on shutdown), and knowledge-base searches use a shared Chroma client plus a
+256-entry result cache, pre-warmed at startup (`rag/retriever.py`). Voice also opens the tools
+connection the moment a call connects, so the first question isn't the slow one. Trade-off to know:
+after re-running `python -m app.rag.ingest`, answers can serve the old docs for up to 10 minutes (the
+cache TTL) -- restart the backend to pick them up immediately.
+
+**Model choice (`LLM_MODEL`, default `gemini-2.5-flash`):** `gemini-2.5-flash-lite` was tried and
+rejected. With the Hinglish rules on, it looked an order up first in only 0-6 of 15 tries; Flash did
+in 15 of 15, at the same ~1.2 s per decision. Before switching models, check that questions like
+"Mera order kahan hai?" still trigger `lookup_order`, and re-run `eval/run_agent_eval.py` and
+`security/red_team.py`.
+
+**Observability:** `support_agent_voice_stt_latency_seconds`,
+`support_agent_voice_first_audio_seconds`, and `support_agent_voice_events_total{event=...}`.
+
+**Not verified here:** the test suite fakes STT/TTS/the model, so Groq, Azure and the
+browser VAD/audio path have not been exercised against the live services yet -- do one
+real call end to end before relying on it. Latency target: roughly 1.5-2 s from end of
+speech to first audio.
 
 ## Evaluation dashboard
 
