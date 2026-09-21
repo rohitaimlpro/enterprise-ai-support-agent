@@ -41,6 +41,16 @@ def append_message(conversation_id: str, role: str, content: str) -> None:
     client.expire(key, 60 * 60 * 24)  # 24h; Postgres is the durable copy
 
 
+def pop_last_message(conversation_id: str, role: str, content: str) -> None:
+    """Drop the newest cached message -- but only if it is the one the caller
+    expects, so a stale call can never remove someone else's message."""
+    client = _client()
+    key = _key(conversation_id)
+    last = client.lindex(key, -1)
+    if last is not None and json.loads(last) == {"role": role, "content": content}:
+        client.rpop(key)
+
+
 def set_cached_messages(conversation_id: str, messages: list[dict]) -> None:
     """(Re)populates the cache from Postgres after a cache miss."""
     settings = get_settings()

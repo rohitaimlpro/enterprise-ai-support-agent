@@ -39,3 +39,19 @@ guardrail_flags_total = Counter(
     "Number of times a tool result was flagged and filtered by the output guardrail",
     ["reason"],
 )
+
+voice_stt_latency_seconds = Histogram(
+    "support_agent_voice_stt_latency_seconds",
+    "Groq Whisper transcription latency for one utterance",
+)
+
+voice_first_audio_seconds = Histogram(
+    "support_agent_voice_first_audio_seconds",
+    "Time from end of the user's utterance to the first audio frame sent back",
+)
+
+voice_events_total = Counter(
+    "support_agent_voice_events_total",
+    "Voice-session edge cases handled, e.g. stt_failure, tts_failure, barge_in, dropped_noise",
+    ["event"],
+)

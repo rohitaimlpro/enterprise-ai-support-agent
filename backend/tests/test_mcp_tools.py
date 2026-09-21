@@ -87,3 +87,40 @@ def test_escalate_issue_opens_high_priority_ticket(seeded_user_and_order):
     result = mcp_server.escalate_issue(reason="Can't answer this one")
     assert "Escalated" in result
     assert "high" in result.lower() or "priority" in result.lower()
+
+
+# ---- malformed order ids (a model can invent "MS001"; a mis-heard voice request can too) ----
+
+
+@pytest.mark.parametrize("bad_id", ["MS001", "order-1234", "1234", "not-a-uuid", "c64bde66", " "])
+def test_every_order_tool_rejects_a_malformed_id_instead_of_crashing(seeded_user_and_order, bad_id):
+    """On Postgres a malformed UUID raised a database error that crashed the whole
+    conversation turn. Each tool must answer with a message the model can act on."""
+    for result in (
+        mcp_server.lookup_order(order_id=bad_id),
+        mcp_server.get_invoice(order_id=bad_id),
+        mcp_server.cancel_order(order_id=bad_id),
+        mcp_server.refund_request(order_id=bad_id, reason="test"),
+    ):
+        assert "not a valid order id" in result
+        assert "lookup_order" in result  # tells the model how to recover
+
+
+def test_a_malformed_id_changes_nothing(seeded_user_and_order, sqlite_sessionmaker):
+    _, order_id = seeded_user_and_order
+    mcp_server.cancel_order(order_id="MS001")
+    mcp_server.refund_request(order_id="MS001", reason="x")
+    session = sqlite_sessionmaker()
+    assert session.query(Order).filter(Order.id == order_id).one().status == OrderStatus.processing
+    session.close()
+
+
+def test_a_well_formed_but_unknown_id_is_simply_not_found(seeded_user_and_order):
+    result = mcp_server.get_invoice(order_id="00000000-0000-0000-0000-000000000000")
+    assert "not found" in result.lower() and "not a valid" not in result
+
+
+def test_a_real_id_still_works(seeded_user_and_order):
+    _, order_id = seeded_user_and_order
+    assert "Widget" in mcp_server.lookup_order(order_id=order_id)
+    assert "Widget" in mcp_server.get_invoice(order_id=order_id)

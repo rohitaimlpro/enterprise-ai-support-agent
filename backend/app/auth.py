@@ -48,3 +48,14 @@ def decode_access_token(token: str) -> str | None:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+def token_expiry(token: str) -> datetime | None:
+    """Expiry time of an already-validated token, or None if it can't be
+    read. Voice sessions outlive a single request, so they need to notice
+    a JWT expiring mid-call rather than only checking it once at connect."""
+    try:
+        exp = jwt.get_unverified_claims(token).get("exp")
+    except JWTError:
+        return None
+    return datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None

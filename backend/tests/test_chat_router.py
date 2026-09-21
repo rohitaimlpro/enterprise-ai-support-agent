@@ -111,6 +111,7 @@ def test_chat_streams_tokens_tool_call_and_done(client, db_session, monkeypatch)
     assert "search_knowledge_base" in body
     assert "Refund Policy" in body
     assert "prompt_injection_phrasing" in body
+    assert "event: status" in body  # the "checking the knowledge base" line
     assert "event: done" in body
 
 

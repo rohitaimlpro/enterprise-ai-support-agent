@@ -18,6 +18,7 @@ argument the LLM fills in -- an LLM should never be trusted to supply
 """
 
 import os
+import uuid
 
 from mcp.server.fastmcp import FastMCP
 
@@ -34,6 +35,23 @@ def _current_user_id() -> str:
     return user_id
 
 
+_INVALID_ORDER_ID = (
+    "Order not found: that is not a valid order id. Call lookup_order with no order_id to list "
+    "this user's orders (and their real ids), then use one of those."
+)
+
+
+def _is_valid_order_id(order_id: str) -> bool:
+    """Order ids are UUIDs. A language model can invent one ("MS001") or a mis-heard
+    voice request can produce one; Postgres raises on a malformed UUID, which used to
+    crash the whole conversation turn. Reject it here with a message the model can act on."""
+    try:
+        uuid.UUID(str(order_id))
+        return True
+    except ValueError:
+        return False
+
+
 def _priority_from_string(value: str) -> TicketPriority:
     try:
         return TicketPriority(value.lower())
@@ -45,6 +63,8 @@ def _priority_from_string(value: str) -> TicketPriority:
 def lookup_order(order_id: str = "") -> str:
     """Look up the current user's orders. Pass order_id to look up one
     specific order, or leave it blank to list recent orders."""
+    if order_id and not _is_valid_order_id(order_id):
+        return _INVALID_ORDER_ID
     db = SessionLocal()
     try:
         query = db.query(Order).filter(Order.user_id == _current_user_id())
@@ -67,6 +87,8 @@ def lookup_order(order_id: str = "") -> str:
 @mcp.tool()
 def cancel_order(order_id: str) -> str:
     """Cancel an order that is still in 'processing' status."""
+    if not _is_valid_order_id(order_id):
+        return _INVALID_ORDER_ID
     db = SessionLocal()
     try:
         order = (
@@ -90,6 +112,8 @@ def cancel_order(order_id: str) -> str:
 def refund_request(order_id: str, reason: str) -> str:
     """File a refund request for one of the user's orders and open a
     tracking ticket for it."""
+    if not _is_valid_order_id(order_id):
+        return _INVALID_ORDER_ID
     db = SessionLocal()
     try:
         order = (
@@ -118,6 +142,8 @@ def refund_request(order_id: str, reason: str) -> str:
 @mcp.tool()
 def get_invoice(order_id: str) -> str:
     """Get a plain-text invoice summary for one order."""
+    if not _is_valid_order_id(order_id):
+        return _INVALID_ORDER_ID
     db = SessionLocal()
     try:
         order = (

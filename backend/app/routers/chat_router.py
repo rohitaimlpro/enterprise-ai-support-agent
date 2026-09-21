@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent.graph import build_agent_graph
+from app.agent.turn import extract_text as _extract_text
+from app.agent.turn import stream_turn
 from app.cache.redis_client import append_message, get_cached_messages, set_cached_messages
 from app.database import get_db
 from app.deps import get_current_user
@@ -30,28 +32,14 @@ from app.observability.metrics import (
     tool_calls_total,
 )
 from app.schemas import ChatRequest, ConversationResponse
-from app.tools.mcp_client import mcp_tools_session
+# Borrowed from a per-user pool of warm subprocesses instead of spawning one
+# per turn (~1 s saved). Kept under the old local name on purpose: it is the
+# seam the chat tests patch.
+from app.tools.mcp_client import shared_mcp_tools_session as mcp_tools_session
+from app.voice.phrases import tool_status
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = get_logger(__name__)
-
-
-def _extract_text(content) -> str:
-    """A streamed chunk's `.content` is usually a plain string, but newer
-    Gemini models can return a list of content blocks instead (e.g. a
-    separate "thinking" block alongside a "text" block) -- pull out just
-    the user-facing text, in whichever shape it arrives."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-        return "".join(parts)
-    return ""
 
 
 def _get_or_create_conversation(
@@ -160,35 +148,24 @@ async def chat(
                 "guardrail_flags": [],
             }
 
-            # astream_events gives us both token-level streaming (from the
-            # chat model inside the "agent" node) and tool-call lifecycle
-            # events (from the "tools" node) in one unified event stream.
-            async for event in graph.astream_events(initial_state, version="v2"):
-                kind = event["event"]
+            async for event in stream_turn(graph, initial_state):
+                if event.kind == "token":
+                    full_answer += event.text
+                    yield {"event": "token", "data": json.dumps({"content": event.text})}
 
-                if kind == "on_chat_model_stream":
-                    chunk = event["data"]["chunk"]
-                    text = _extract_text(chunk.content)
-                    if text:
-                        full_answer += text
-                        yield {"event": "token", "data": json.dumps({"content": text})}
-
-                elif kind == "on_tool_start":
-                    tool_call = {"name": event["name"], "args": event["data"].get("input", {})}
-                    collected_tool_calls.append(tool_call)
-                    tool_calls_total.labels(tool_name=tool_call["name"]).inc()
-                    if tool_call["name"] == "search_knowledge_base":
+                elif event.kind == "tool_start":
+                    collected_tool_calls.append(event.tool)
+                    tool_calls_total.labels(tool_name=event.tool["name"]).inc()
+                    if event.tool["name"] == "search_knowledge_base":
                         rag_retrievals_total.inc()
-                    yield {"event": "tool_call", "data": json.dumps(tool_call)}
+                    yield {"event": "tool_call", "data": json.dumps(event.tool)}
+                    # A human-readable "working on it" line, so the user isn't
+                    # staring at a blank bubble while the tool runs.
+                    yield {"event": "status", "data": json.dumps({"text": tool_status(event.tool["name"])})}
 
-                elif kind == "on_chain_end" and event.get("name") == "tools":
-                    output = event["data"].get("output") or {}
-                    new_sources = output.get("sources") if isinstance(output, dict) else None
-                    if new_sources:
-                        collected_sources.extend(new_sources)
-                    new_flags = output.get("guardrail_flags") if isinstance(output, dict) else None
-                    if new_flags:
-                        collected_guardrail_flags.extend(new_flags)
+                elif event.kind == "tool_output":
+                    collected_sources.extend(event.sources)
+                    collected_guardrail_flags.extend(event.flags)
 
         latency_seconds = time.monotonic() - start
         chat_turn_latency_seconds.observe(latency_seconds)

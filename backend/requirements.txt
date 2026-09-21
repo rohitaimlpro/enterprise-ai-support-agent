@@ -38,6 +38,10 @@ chromadb==1.5.9
 langchain-mcp-adapters==0.2.2
 mcp==1.12.4
 
+# --- Voice (Groq Whisper STT over httpx, Azure Neural TTS) ---
+httpx==0.28.1
+azure-cognitiveservices-speech==1.42.0
+
 # --- Observability ---
 prometheus-fastapi-instrumentator==8.1.0
 
@@ -52,4 +56,3 @@ datasets==5.0.1
 
 # --- Testing ---
 pytest==8.3.4
-httpx==0.28.1

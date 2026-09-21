@@ -13,18 +13,33 @@ app/tools/mcp_client.py and app/routers/chat_router.py.
 """
 
 import json
+from collections.abc import Awaitable, Callable
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.tools import ToolException
 from langgraph.graph import END, StateGraph
 
 from app.agent.guardrails import filter_tool_output
 from app.agent.llm import get_llm
-from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.prompts import get_system_prompt
 from app.agent.state import AgentState
+from app.observability.logging_config import get_logger
 from app.rag.retriever import search_knowledge_base
 
+logger = get_logger(__name__)
 
-def build_agent_graph(mcp_tools: list):
+
+# (tool_name, args) -> None to let the call run, or a string to return to
+# the model *instead of* running the tool. Voice sessions use this to make
+# refund/cancel wait for an explicit spoken "yes" -- see voice/confirm.py.
+ToolGate = Callable[[str, dict], Awaitable[str | None]]
+
+
+def build_agent_graph(
+    mcp_tools: list,
+    system_prompt: str | None = None,
+    tool_gate: ToolGate | None = None,
+):
     """mcp_tools: the live, per-request MCP-backed tools (orders/tickets/
     escalation). The RAG search tool is added here directly since it
     doesn't depend on a live MCP session."""
@@ -35,7 +50,7 @@ def build_agent_graph(mcp_tools: list):
     async def agent_node(state: AgentState) -> dict:
         messages = state["messages"]
         if not messages or not isinstance(messages[0], SystemMessage):
-            messages = [SystemMessage(content=SYSTEM_PROMPT), *messages]
+            messages = [SystemMessage(content=system_prompt or get_system_prompt()), *messages]
         response = await llm.ainvoke(messages)
         return {"messages": [response]}
 
@@ -47,9 +62,26 @@ def build_agent_graph(mcp_tools: list):
 
         for call in last_message.tool_calls:
             tool = tools_by_name[call["name"]]
-            result = await tool.ainvoke(call["args"])
+            blocked = await tool_gate(call["name"], call["args"]) if tool_gate else None
+            failed = False
+            try:
+                result = blocked if blocked is not None else await tool.ainvoke(call["args"])
+            except ToolException as exc:
+                failed = True
+                # The tool ran and reported an error (bad input, a rejected request).
+                # That must not kill the whole conversation turn, so the model gets a
+                # short, safe message it can recover from. The raw error stays in the
+                # log: it can contain SQL and user ids we don't want in model context.
+                # Infrastructure failures (a dead tools process) are NOT ToolExceptions
+                # and still propagate, so the session gets reset.
+                logger.warning("tool_failed name=%s error=%s", call["name"], exc)
+                result = (
+                    "The tool could not complete that request. Tell the user briefly that it "
+                    "didn't work and offer to list their orders or open a ticket. Do not guess "
+                    "or invent details."
+                )
 
-            if call["name"] == "search_knowledge_base":
+            if call["name"] == "search_knowledge_base" and blocked is None and not failed:
                 # This tool returns a JSON string of {"sources": [...],
                 # "context": "..."}: pull the citations out into state for
                 # the chat UI, but only forward the plain-text context to

@@ -2,10 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps needed by psycopg2 and chromadb's sqlite/onnx bits.
+# System deps needed by psycopg2 and chromadb's sqlite/onnx bits, plus
+# libasound2 which the Azure Speech SDK links against even for in-memory TTS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
