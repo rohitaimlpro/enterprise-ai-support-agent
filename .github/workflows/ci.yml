@@ -1,7 +1,7 @@
 name: CI
 
 # Runs on every push/PR. Deliberately limited to what's free and fast:
-# the 38-test pytest suite (in-memory SQLite, no API key, no external
+# the 320-test pytest suite (in-memory SQLite, no API key, no external
 # services) and a frontend build/lint. The red-team suite
 # (security/red_team.py) and the RAGAS eval (eval/run_eval.py) both need
 # a real GOOGLE_API_KEY and call the live Gemini API on every run -- that

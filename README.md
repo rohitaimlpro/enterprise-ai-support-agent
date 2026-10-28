@@ -1,7 +1,7 @@
 # Enterprise AI Customer Support Agent
 
-A production-shaped agentic AI platform for enterprise customer support: a
-LangGraph agent that answers questions from a RAG knowledge base, calls
+A production-shaped agentic AI platform for enterprise customer support,
+by text or by voice (Roman Hinglish by default): a LangGraph agent that answers questions from a RAG knowledge base, calls
 real backend tools over **MCP** (Model Context Protocol) to look up orders
 and manage tickets, remembers conversations, streams responses, reports on
 its own quality via a RAGAS evaluation dashboard, and is hardened with an
@@ -84,6 +84,7 @@ backend/            FastAPI app, LangGraph agent, RAG, MCP tools, tests
     agent/           LangGraph graph, prompts, Gemini wrapper, guardrails
     rag/              Chroma ingestion + retrieval
     tools/             MCP server + client
+    voice/             realtime voice: STT, TTS, turn-taking, confirmation gate
     cache/              Redis conversation cache
     observability/       structured logging + Prometheus metrics
     routers/               FastAPI endpoints (incl. admin trace viewer)
@@ -145,7 +146,7 @@ cd backend
 pytest
 ```
 
-The suite (260+ tests, including the voice pipeline's edge cases) runs against an in-memory SQLite database and stubs
+The backend suite (320 tests, including the voice pipeline's edge cases) runs against an in-memory SQLite database and stubs
 Redis/MCP/the LLM where needed, so it needs no external services and no API
 key -- it covers auth, the MCP tool business logic (including that one
 user's orders never leak to another), the RAG doc-chunking pipeline, the
@@ -295,6 +296,33 @@ through and fell back from 3-sample to 1-sample self-consistency on some
 examples (visible in the run's logged `TimeoutError`s), so treat these as
 directionally real rather than a tight, reproducible benchmark.
 
+## Agent task-correctness evaluation
+
+`eval/run_agent_eval.py` runs the **real agent graph** (live Gemini + MCP tools)
+against the 52 scenarios in `eval/agent_eval_dataset.json` for the seeded demo user
+(tool selection 17, tool correctness 13, safety 6, task success 5, escalation 5,
+RAG grounding 4, business rules 2).
+
+Each case resets the demo user's orders/tickets to a known state, sends one message,
+then checks: the expected tool was called (`expect_tool_called`), forbidden tools
+were not (`expect_no_tool_called`), RAG returned sources (`expect_sources_nonempty`),
+and the **database ended in the right state** (`expect_db_check`, e.g. the right
+order is `cancelled`, a refund ticket exists, no order changed on an ambiguous
+"cancel everything"). A case passes only if every check passes; the score is
+passed / total, written to `backend/agent_eval_results/latest.json` with a
+per-category breakdown.
+
+```
+docker compose exec backend python /app/../eval/run_agent_eval.py
+```
+
+Limits to know: one run per case (the model is non-deterministic, so a single run
+is a sample), single-turn only, tool checks are "was it called" rather than
+exact-argument or call-order matching, and **no pass rate is recorded in this
+repo** -- run it to get a current number. Its first live run found two real gaps
+(asking for an order id instead of looking it up; asking for confirmation before
+escalating when already authorized).
+
 ## Security & adversarial validation
 
 ```
@@ -372,6 +400,9 @@ top of that file.
 - **Cross-turn tool memory**: conversation history replayed into the model
   is user/assistant text only; each turn's own tool-call loop stays
   in-memory for that turn rather than being replayed on subsequent turns.
+- **Voice latency not benchmarked live**: the voice path is covered by tests with
+  fake STT/TTS/LLM; Groq/Azure/browser audio have not been measured end to end. The
+  1.5-2 s end-of-speech-to-first-audio figure is a target, not a result.
 - **Single eval snapshot**: 37 examples is enough to prove the pipeline
   works end-to-end and exercises real-world question phrasing across all
   26 support intents; a production eval suite would run into the hundreds
